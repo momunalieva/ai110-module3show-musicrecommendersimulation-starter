@@ -190,4 +190,29 @@ Python's `list.sort()` changes a list in place and returns `None`. `sorted()` cr
 - Completed here: dependency setup, dataset review and expansion, design, implementation, explanations, CLI runs, five-profile evaluation, weight experiment, automated checks, and documentation.
 - Separate-chat design/evaluation discussions were carried out in this chat; no separate chat sessions were opened.
 - Personal musical intuition, reflection, and manual review must come from the student. No personal reactions have been fabricated.
-- Only the supplied phases have been checked; any later submission rubric still needs to be provided.
+- Phases 1–5 and all four optional extensions shown in the screenshots have been reviewed. The linked detailed grading page was not supplied.
+
+## Optional Extensions: Run and Design
+
+```bash
+python -m src.main --mode mood-first
+python -m src.main --mode energy-focused
+python -m src.main --advanced
+python -m src.main --diversity
+python -m src.main --advanced --mode mood-first --diversity --table
+```
+
+All four shown challenges are implemented. Five extra attributes are present in every CSV row and participate when `--advanced` supplies explicit preference targets. `--mode` selects a configuration-based Strategy. `--diversity` applies a greedy artist/genre repetition penalty. `--table` prints song names, scores, and wrapped reasons using Python formatting without another dependency. See the Model Card for formulas, caveats, and actual table output, and `ai_interactions.md` for design and verification notes.
+
+Final checks: 18 automated tests passed, dependency consistency passed, and 12 CLI configurations ran across five profiles (60 profile runs). The default scoring output remains unchanged by opt-in extensions.
+
+## Submission Checklist
+
+- Correct repository: `momunalieva/ai110-module3show-musicrecommendersimulation-starter`.
+- Required code, README, Model Card, tests, data, and stretch-feature log are present.
+- Implementation and extension/documentation work are recorded in meaningful commits.
+- Public visibility: not verified; the environment blocked the GitHub API request. Check the Public label on GitHub. No visibility changes were made.
+- Reflection: a simple draft is in Model Card section 9. Review it and supply your own honest learning and musical observations before submission.
+- Commit/push status is reported in chat after the final push; a local commit alone is not proof of remote persistence.
+- Deadline: not provided, so on-time submission cannot be verified.
+- Submit using the course page's Submit button after reviewing the repository. The assistant has not submitted the assignment.

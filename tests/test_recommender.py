@@ -147,3 +147,42 @@ def test_cli_runs_and_prints_five_explained_results():
     assert 'Loaded songs: 18' in result.stdout
     assert '1. Sunrise City' in result.stdout
     assert result.stdout.count('Because:') == 5
+
+
+def test_five_advanced_attributes_contribute_to_score():
+    song = load_songs(CATALOG)[0]
+    prefs = dict(PREFS, target_popularity=song['popularity'],
+                 target_release_decade=song['release_decade'],
+                 target_duration_seconds=song['duration_seconds'],
+                 target_instrumentalness=song['instrumentalness'],
+                 prefers_live=song['live_performance'])
+    score, reasons = score_song(prefs, song)
+    assert score == pytest.approx(score_song(PREFS, song)[0] + 2.5)
+    assert len(reasons) == 8
+
+
+def test_mood_strategy_changes_second_choice():
+    from src.recommender import SCORING_MODES
+    result = recommend_songs(PREFS, load_songs(CATALOG), **SCORING_MODES['mood-first'])
+    assert result[1][0]['title'] == 'Rooftop Lights'
+
+
+def test_diversity_penalty_promotes_another_artist_and_genre():
+    song = asdict(make_small_recommender().songs[0])
+    duplicate = dict(song, id=3)
+    alternative = dict(song, id=4, artist='Another Artist', genre='indie')
+    ordinary = recommend_songs(PREFS, [song, duplicate, alternative], 2)
+    diverse = recommend_songs(PREFS, [song, duplicate, alternative], 2, diversity=True)
+    assert ordinary[1][0]['id'] == 3
+    assert diverse[1][0]['id'] == 4
+    assert 'diversity penalty' in diverse[1][2]
+    assert len({item[0]['id'] for item in diverse}) == 2
+
+
+def test_all_optional_flags_work_together():
+    import subprocess
+    import sys
+    result = subprocess.run([sys.executable, '-m', 'src.main', '--advanced', '--mode', 'mood-first', '--diversity', '--table'], cwd=CATALOG.parents[1], capture_output=True, text=True, check=True)
+    assert 'Reasons' in result.stdout
+    assert 'popularity closeness' in result.stdout
+    assert 'diversity penalty' in result.stdout

@@ -1,7 +1,7 @@
 """Content-based scoring shared by the dictionary and object interfaces."""
 import csv
 import math
-from dataclasses import asdict, dataclass
+from dataclasses import MISSING, asdict, dataclass
 from typing import Dict, List, Tuple
 
 
@@ -18,6 +18,11 @@ class Song:
     valence: float
     danceability: float
     acousticness: float
+    popularity: float = 50
+    release_decade: int = 2020
+    duration_seconds: float = 180
+    instrumentalness: float = 0
+    live_performance: bool = False
 
 
 @dataclass
@@ -42,7 +47,7 @@ def load_songs(csv_path: str) -> List[Dict]:
     songs = []
     with open(csv_path, newline="", encoding="utf-8") as handle:
         reader = csv.DictReader(handle)
-        required = set(Song.__dataclass_fields__)
+        required = {name for name, field in Song.__dataclass_fields__.items() if field.default is MISSING}
         if not required.issubset(reader.fieldnames or []):
             raise ValueError("Song CSV is missing required columns")
         for row in reader:
@@ -52,6 +57,21 @@ def load_songs(csv_path: str) -> List[Dict]:
                 raise ValueError("tempo_bpm must be positive and finite")
             for field in ("energy", "valence", "danceability", "acousticness"):
                 row[field] = _unit_value(row[field], field)
+            for name in ("popularity", "duration_seconds", "instrumentalness"):
+                if name in row:
+                    row[name] = float(row[name])
+            if "release_decade" in row:
+                row["release_decade"] = int(row["release_decade"])
+            if "live_performance" in row:
+                if row["live_performance"] not in ("0", "1"):
+                    raise ValueError("live_performance must be 0 or 1")
+                row["live_performance"] = row["live_performance"] == "1"
+            if "popularity" in row:
+                _unit_value(row["popularity"] / 100, "popularity / 100")
+            if "instrumentalness" in row:
+                _unit_value(row["instrumentalness"], "instrumentalness")
+            if "duration_seconds" in row and (not math.isfinite(row["duration_seconds"]) or row["duration_seconds"] <= 0):
+                raise ValueError("duration_seconds must be finite and positive")
             songs.append(row)
     if len({song["id"] for song in songs}) != len(songs):
         raise ValueError("Song IDs must be unique")
@@ -87,11 +107,26 @@ def score_song(user_prefs: Dict, song: Dict, *, genre_weight: float = 2.0,
         bonus = 0.5 * _unit_value(song["acousticness"], "acousticness")
         score += bonus
         reasons.append(f"acoustic preference (+{bonus:.2f})")
+    # Advanced attributes contribute only when a user supplies the matching target.
+    for field, scale in (("popularity", 100), ("release_decade", 50),
+                         ("duration_seconds", 300), ("instrumentalness", 1)):
+        key = "target_" + field
+        if key in user_prefs:
+            target_value = float(user_prefs[key])
+            song_value = float(song[field])
+            if not math.isfinite(target_value) or not math.isfinite(song_value):
+                raise ValueError("Advanced targets and attributes must be finite")
+            bonus = 0.5 * max(0, 1 - abs(song_value - target_value) / scale)
+            score += bonus
+            reasons.append(f"{field} closeness (+{bonus:.2f})")
+    if "prefers_live" in user_prefs and song["live_performance"] == user_prefs["prefers_live"]:
+        score += 0.5
+        reasons.append("live preference match (+0.50)")
     return score, reasons
 
 
 def recommend_songs(user_prefs: Dict, songs: List[Dict], k: int = 5,
-                    **weights) -> List[Tuple[Dict, float, str]]:
+                    diversity: bool = False, **weights) -> List[Tuple[Dict, float, str]]:
     """Score every song and return the top k without reordering the catalog."""
     if k < 0:
         raise ValueError("k must be nonnegative")
@@ -99,7 +134,21 @@ def recommend_songs(user_prefs: Dict, songs: List[Dict], k: int = 5,
     for song in songs:
         score, reasons = score_song(user_prefs, song, **weights)
         scored.append((song, score, "; ".join(reasons)))
-    return sorted(scored, key=lambda item: item[1], reverse=True)[:k]
+    if not diversity:
+        return sorted(scored, key=lambda item: item[1], reverse=True)[:k]
+    selected, artists, genres = [], {}, {}
+    while scored and len(selected) < k:
+        def adjusted(item):
+            song, base, _ = item
+            return base - 1.5 * artists.get(song["artist"], 0) - 0.75 * genres.get(song["genre"], 0)
+        best = max(scored, key=adjusted)
+        song, base, explanation = best
+        final = adjusted(best)
+        selected.append((song, final, explanation + f"; diversity penalty (-{base - final:.2f}); base score {base:.2f}"))
+        artists[song["artist"]] = artists.get(song["artist"], 0) + 1
+        genres[song["genre"]] = genres.get(song["genre"], 0) + 1
+        scored.remove(best)
+    return selected
 
 
 class Recommender:
@@ -118,3 +167,11 @@ class Recommender:
         """Describe the contributions used by the shared scoring function."""
         _, reasons = score_song(asdict(user), asdict(song))
         return "; ".join(reasons)
+
+
+# A configuration-based Strategy pattern: swap weights, reuse the scoring engine.
+SCORING_MODES = {
+    "genre-first": {"genre_weight": 2.0, "mood_weight": 1.5, "energy_weight": 1.0},
+    "mood-first": {"genre_weight": 1.0, "mood_weight": 2.5, "energy_weight": 1.0},
+    "energy-focused": {"genre_weight": 1.0, "mood_weight": 1.5, "energy_weight": 2.0},
+}
